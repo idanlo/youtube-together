@@ -9,6 +9,7 @@ function Room(props) {
   const [videoId, setVideoId] = React.useState('');
   const [player, setPlayer] = React.useState(null);
   const [query, setQuery] = React.useState('');
+  const [state, setState] = React.useState('');
   const [searchResults, setSearchResults] = React.useState(null);
 
   // set room id
@@ -33,7 +34,7 @@ function Room(props) {
 
   // get current playing video, if there are no playing video then play one
   React.useEffect(() => {
-    if ((userId, roomId)) {
+    if (userId && roomId) {
       database.ref('rooms/' + roomId).on('value', snap => {
         if (snap.child('video').val()) {
           // if video id already exists in room then obtain it
@@ -44,8 +45,32 @@ function Room(props) {
         }
       });
     }
-    return () => database.ref('rooms/' + roomId + '/video').off('value');
+    return () => database.ref('rooms/' + roomId).off('value');
   }, [roomId, userId]);
+
+  // get current playing video, if there are no playing video then play one
+  React.useEffect(() => {
+    if (player && userId && roomId) {
+      database.ref('rooms/' + roomId + '/time').on('value', snap => {
+        console.log('ONME');
+        if (snap.val() !== player.getCurrentTime()) {
+          player.seekTo(snap.val());
+        }
+      });
+      database.ref('rooms/' + roomId + '/state').on('value', snap => {
+        if (snap.val() !== state) {
+          {
+            if (snap.val() === 'paused') {
+              player.pauseVideo();
+            } else if (snap.val() === 'playing') {
+              player.playVideo();
+            }
+          }
+        }
+      });
+    }
+    return () => database.ref('rooms/' + roomId + '/time').off('value');
+  }, [player, roomId, state, userId]);
 
   // leave room when window closes
   // TODO: when user goes back in chrome but doesn't leave the page then it doesn't remove him from the user list
@@ -73,8 +98,38 @@ function Room(props) {
     console.log(e);
   }
 
-  function onStateChange(state) {
-    console.log(state);
+  function onStateChange(e) {
+    let newState = 'unstarted'; // this is when e.data === -1.
+    let time = 0;
+    if (e.data === 0) {
+      newState = 'ended';
+    } else if (e.data === 1) {
+      newState = 'playing';
+    } else if (e.data === 2) {
+      newState = 'paused';
+    } else if (e.data === 3) {
+      newState = 'buffering';
+    } else if (e.data === 5) {
+      newState = 'video cued';
+    }
+    setState(newState);
+    time = e.target.getCurrentTime();
+    console.log(newState, time);
+    database
+      .ref('rooms/' + roomId + '/time')
+      .once('value')
+      .then(snap => {
+        if (Math.abs(snap.val() - time) > 0.75) {
+          database.ref('rooms/' + roomId).update({
+            time
+          });
+        }
+      });
+    if (newState !== 'buffering') {
+      database.ref('rooms/' + roomId).update({
+        state: newState
+      });
+    }
   }
 
   function Search() {
